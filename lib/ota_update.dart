@@ -7,8 +7,7 @@ import 'package:flutter/services.dart';
 /// On Android it downloads the file (with progress reporting) and triggers app installation intent.
 /// On iOS it opens safari with specified ipa url. (not yet functioning)
 class OtaUpdate {
-  static const EventChannel _progressChannel =
-      EventChannel('sk.fourq.ota_update');
+  static const EventChannel _progressChannel = EventChannel('sk.fourq.ota_update');
   Stream<OtaEvent>? _progressStream;
 
   /// Execute download and instalation of the plugin.
@@ -23,8 +22,7 @@ class OtaUpdate {
     if (destinationFilename != null && destinationFilename.contains('/')) {
       throw OtaUpdateException('Invalid filename $destinationFilename');
     }
-    final StreamController<OtaEvent> controller =
-        StreamController<OtaEvent>.broadcast();
+    final StreamController<OtaEvent> controller = StreamController<OtaEvent>.broadcast();
     if (_progressStream == null) {
       _progressChannel.receiveBroadcastStream(
         <dynamic, dynamic>{
@@ -40,11 +38,15 @@ class OtaUpdate {
         if (otaEvent.status != OtaStatus.DOWNLOADING) {
           controller.close();
         }
-      }).onError((Object error) {
-        if (error is PlatformException) {
-          controller.add(_toOtaEvent(<String?>[error.code, error.message]));
-        }
-      });
+      })
+        ..onError((Object error) {
+          if (error is PlatformException) {
+            controller.add(_toOtaEvent(<String?>[error.code, error.message]));
+          }
+        })
+        ..onDone(() {
+          print("receiveBroadcastStream done");
+        });
       _progressStream = controller.stream;
     }
     return _progressStream!;
@@ -90,7 +92,13 @@ enum OtaStatus {
   /// CHECKSUM VERIFICATION FAILED. MOSTLY THIS IS DUE INCORRECT OR CORRUPTED FILE
   /// THIS IS ALSO RETURNED IF PLUGIN WAS UNABLE TO CALCULATE SHA 256 HASH OF DOWNLOADED FILE
   /// SEE VALUE FOR MORE INFORMATION
-  CHECKSUM_ERROR
+  CHECKSUM_ERROR,
+
+  ///INSTALLED
+  INSTALLED,
+
+  ///INSTALL_ERROR
+  INSTALL_ERROR
 }
 
 /// EXCEPTION FOR QUICK IDENTIFICATION OF ERRORS THROWN FROM THIS PLUGIN.
