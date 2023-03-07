@@ -1,8 +1,12 @@
 package sk.fourq.otaupdate;
 
+import static android.app.Activity.RESULT_FIRST_USER;
+import static android.app.Activity.RESULT_OK;
+
 import android.Manifest;
 import android.annotation.TargetApi;
 import android.app.Activity;
+import android.app.DownloadManager;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
@@ -60,8 +64,8 @@ public class OtaUpdatePlugin implements FlutterPlugin, ActivityAware, EventChann
 
     //BASIC PLUGIN STATE
     private Context context;
-    private Activity activity;
-    private EventChannel.EventSink progressSink;
+    private static Activity activity;
+    private static EventChannel.EventSink progressSink;
     private Handler handler;
     private String androidProviderAuthority;
     private BinaryMessenger messanger;
@@ -90,6 +94,7 @@ public class OtaUpdatePlugin implements FlutterPlugin, ActivityAware, EventChann
     @Override
     public void onAttachedToEngine(FlutterPluginBinding binding) {
         Log.d(TAG, "onAttachedToEngine");
+
         initialize(binding.getApplicationContext(), binding.getBinaryMessenger());
     }
 
@@ -194,6 +199,8 @@ public class OtaUpdatePlugin implements FlutterPlugin, ActivityAware, EventChann
             return false;
         }
     }
+
+
 
     /**
      * Execute download and start installation. This method is called either from onListen method
@@ -316,23 +323,53 @@ public class OtaUpdatePlugin implements FlutterPlugin, ActivityAware, EventChann
             Uri apkUri = FileProvider.getUriForFile(context, androidProviderAuthority, downloadedFile);
             intent = new Intent(Intent.ACTION_INSTALL_PACKAGE);
             intent.setData(apkUri);
-            intent.setFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            intent.putExtra(Intent.EXTRA_RETURN_RESULT, true);
+            intent.setFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+//                    .addFlags(Intent.FLAG_ACTIVITY_FORWARD_RESULT);
         } else {
             intent = new Intent(Intent.ACTION_VIEW);
             intent.setDataAndType(fileUri, "application/vnd.android.package-archive");
-            intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            intent.putExtra(Intent.EXTRA_RETURN_RESULT, true);
+//            intent.setFlags(Intent.FLAG_ACTIVITY_FORWARD_RESULT);
         }
         //SEND INSTALLING EVENT
         if (progressSink != null) {
             //NOTE: We have to start intent before sending event to stream
             //if application tries to programatically terminate app it may produce race condition
             //and application may end before intent is dispatched
-            context.startActivity(intent);
-            progressSink.success(Arrays.asList("" + OtaStatus.INSTALLING.ordinal(), ""));
-            progressSink.endOfStream();
-            progressSink = null;
+            activity.startActivityForResult(intent,10,null);
+//            progressSink.success(Arrays.asList("" + OtaStatus.INSTALLING.ordinal(), ""));
+//            progressSink.endOfStream();
+//            progressSink = null;
         }
+    }
+
+
+    public static boolean onActivityResult(int requestCode, int resultCode, Intent data) {
+        Log.e(TAG, "onActivityResult " +requestCode);
+        if(requestCode==10){
+            if(resultCode == RESULT_OK){
+                Log.e(TAG, "Package Installation Success");
+                progressSink.success(Arrays.asList("" + OtaStatus.INSTALLING.ordinal(), ""));
+                progressSink.endOfStream();
+                progressSink = null;
+            }else if(resultCode == RESULT_FIRST_USER){
+                Log.e(TAG, "Package Installation Cancelled by USER");
+                progressSink.error("" +OtaStatus.INSTALL_ERROR.ordinal(),"Package Installation Cancelled by USER", null);
+                progressSink.success(Arrays.asList("" + OtaStatus.INSTALL_ERROR.ordinal(), ""));
+                progressSink.endOfStream();
+                progressSink = null;
+            }else{
+                Log.e(TAG, "Something went wrong - INSTALLATION FAILED");
+                progressSink.error("" +OtaStatus.INSTALL_ERROR.ordinal(),"Something went wrong - INSTALLATION FAILED", null);
+                progressSink.success(Arrays.asList("" + OtaStatus.INSTALL_ERROR.ordinal(), ""));
+                progressSink.endOfStream();
+                progressSink = null;
+            }
+
+        }
+
+        return true;
     }
 
     /**
@@ -432,5 +469,7 @@ public class OtaUpdatePlugin implements FlutterPlugin, ActivityAware, EventChann
         INTERNAL_ERROR,
         DOWNLOAD_ERROR,
         CHECKSUM_ERROR,
+        INSTALLED,
+        INSTALL_ERROR
     }
 }
